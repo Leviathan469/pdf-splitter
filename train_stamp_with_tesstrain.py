@@ -185,7 +185,7 @@ def run_tesstrain(training_dir, model_name):
     # Run unicharset_extractor
     print("\nStep 1: Extracting unicharset...")
     cmd = ['unicharset_extractor'] + [str(b) for b in box_files]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(training_dir))
     print(f"  Return code: {result.returncode}")
     
     # Create font_properties
@@ -205,7 +205,7 @@ def run_tesstrain(training_dir, model_name):
             continue
         
         cmd = ['tesseract', str(tif_file), str(tr_file.with_suffix('')), 'box.train', 'stderr']
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(training_dir))
         if result.returncode == 0 and tr_file.exists():
             print(f"  OK: {tr_file.name}")
         else:
@@ -224,13 +224,13 @@ def run_tesstrain(training_dir, model_name):
         '-U', str(training_dir / "unicharset"),
         '-O', f'{model_name}.unicharset'
     ] + [str(tr) for tr in tr_files]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(training_dir))
     print(f"  Return code: {result.returncode}")
     
     # Run cntraining
     print("\nStep 5: Running cntraining...")
     cmd = ['cntraining'] + [str(tr) for tr in tr_files]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(training_dir))
     print(f"  Return code: {result.returncode}")
     
     # Rename files for combining
@@ -248,7 +248,7 @@ def run_tesstrain(training_dir, model_name):
     # Combine into traineddata
     print("\nStep 6: Combining traineddata...")
     cmd = ['combine_tessdata', f'{model_name}.']
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=training_dir)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(training_dir))
     print(f"  Return code: {result.returncode}")
     if result.stdout:
         print(f"  STDOUT: {result.stdout}")
