@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+*.pyo
+stamp_debug/
+debug_*.png
+*.log
+.DS_Store
+Thumbs.db
