@@ -3,13 +3,13 @@
 Split a large PDF into smaller PDFs wherever a 'RECEIVED' stamp page appears.
 Each stamped page becomes page 1 of its output file.
 
-Multi-signal stamp detection for 100% accuracy:
-  1. Find dark text clusters on light background (all 3 lines)
-  2. Structural validation: verify 3-line stamp layout (centered, upper page)
-  3. OCR with whitelist: confirm "RECEIVED" and "BY:" text
-  4. Color verification: confirm date region has red hue
-  5. OCR date from red channel: read date without black text interference
-  6. Date window check: only accept stamps dated today or within last 2 days
+Stamp detection strategy (for 100% accuracy):
+  1. Find the red date using color isolation (most distinctive feature)
+  2. Calculate exact positions of stamp elements relative to the date
+  3. Extract and OCR "RECEIVED" line (above date, outlined text)
+  4. Extract and OCR "BY:" line (below date)
+  5. OCR the red-isolated date channel to read the date
+  6. Verify all signals agree and date is within window
 
 Requires: pdf2image, pytesseract, pypdf, Pillow, opencv-python, numpy
 """
@@ -25,7 +25,7 @@ from pathlib import Path
 try:
     from pdf2image import convert_from_path
     import pytesseract
-    from PIL import Image, ImageEnhance, ImageChops
+    from PIL import Image, ImageEnhance, ImageChops, ImageFilter
     from pypdf import PdfReader, PdfWriter
 except ImportError as e:
     print(f"Missing dependency: {e}")
@@ -69,288 +69,288 @@ WHITELIST = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:./- "
 DEBUG_DIR = Path("./stamp_debug")
 
 
-def preprocess_top_region(image, crop_fraction=0.40):
-    """Crop to top portion where the stamp lives, return cropped image."""
-    w, h = image.size
-    crop = image.crop((0, 0, w, int(h * crop_fraction)))
-    return crop
-
-
-def find_text_regions(image, debug=False):
+def find_red_date_region(image, debug=False):
     """
-    Find regions of dark text on light background.
-    Returns list of (x, y, w, h) bounding boxes for text clusters.
+    Find the red date region using color isolation.
+    Returns (x, y, w, h) of the combined red region, or None.
     """
     arr = np.array(image)
+    if len(arr.shape) < 3:
+        return None
     
-    # Convert to grayscale
-    if len(arr.shape) == 3:
-        gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-    else:
-        gray = arr
+    r = arr[:, :, 0].astype(int)
+    g = arr[:, :, 1].astype(int)
+    b = arr[:, :, 2].astype(int)
     
-    # Adaptive threshold — handles uneven lighting better than global threshold
-    binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-    )
+    red_mask = ((r > g + 15) & (r > b + 15) & (r > 80)).astype(np.uint8) * 255
     
-    # Also try Otsu's threshold as backup
-    _, otsu = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    
-    # Combine both thresholds
-    combined = cv2.bitwise_or(binary, otsu)
-    
-    # Clean up noise
-    kernel = np.ones((2, 2), np.uint8)
-    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel, iterations=1)
-    
-    # Dilate vertically to connect letters in the same word
-    v_kernel = np.ones((5, 1), np.uint8)
-    combined = cv2.dilate(combined, v_kernel, iterations=2)
-    
-    # Dilate horizontally slightly to connect words on same line
-    h_kernel = np.ones((1, 3), np.uint8)
-    combined = cv2.dilate(combined, h_kernel, iterations=1)
+    kernel = np.ones((3, 3), np.uint8)
+    red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
     
     if debug:
-        cv2.imwrite(str(DEBUG_DIR / "2_threshold.png"), combined)
+        cv2.imwrite(str(DEBUG_DIR / "1_red_mask.png"), red_mask)
     
-    # Find contours
-    contours, _ = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv2.findContours(red_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    regions = []
+    if not contours:
+        return None
+    
+    h_img, w_img = red_mask.shape
+    valid = []
     for c in contours:
         area = cv2.contourArea(c)
-        if area < 50:  # Minimum area threshold
+        if area < 50:
             continue
         x, y, w, h = cv2.boundingRect(c)
-        # Filter by aspect ratio — text is wider than tall
-        if h > 0 and w / h < 0.3:
+        if y > h_img * 0.8:
             continue
-        # Filter by height — text should be reasonably tall
-        if h < 10:
-            continue
-        regions.append((x, y, w, h))
+        valid.append((x, y, w, h))
     
-    return regions
-
-
-def merge_nearby_regions(regions, max_gap=30):
-    """Merge text regions that are on the same line (for multi-word lines)."""
-    if not regions:
-        return []
-    
-    # Sort by y position
-    sorted_regions = sorted(regions, key=lambda r: r[1])
-    
-    merged = []
-    current = list(sorted_regions[0])
-    
-    for i in range(1, len(sorted_regions)):
-        x, y, w, h = sorted_regions[i]
-        cx, cy, cw, ch = current
-        
-        # Check if regions are on similar y-level and close horizontally
-        y_overlap = abs(y - cy) < max(cw, w) * 0.5
-        x_gap = x - (cx + cw)
-        
-        if y_overlap and x_gap < max_gap:
-            # Merge
-            new_x = min(cx, x)
-            new_y = min(cy, y)
-            new_w = max(cx + cw, x + w) - new_x
-            new_h = max(cy + ch, y + h) - new_y
-            current = [new_x, new_y, new_w, new_h]
-        else:
-            merged.append(tuple(current))
-            current = [x, y, w, h]
-    
-    merged.append(tuple(current))
-    return merged
-
-
-def identify_stamp_structure(regions, image_size, debug=False):
-    """
-    Identify if the text regions form a 3-line stamp structure.
-    Returns dict with line regions if found, None otherwise.
-    
-    Expected structure:
-      Line 1: "RECEIVED" (large text, centered)
-      Line 2: Date (medium text, centered, different color)
-      Line 3: "BY: ..." (smaller text, left-aligned)
-    """
-    if len(regions) < 3:
+    if not valid:
         return None
     
-    # Sort regions by y position
-    sorted_regions = sorted(regions, key=lambda r: r[1])
+    min_x = min(v[0] for v in valid)
+    min_y = min(v[1] for v in valid)
+    max_x = max(v[0]+v[2] for v in valid)
+    max_y = max(v[1]+v[3] for v in valid)
     
+    pad = 10
+    return (max(0, min_x-pad), max(0, min_y-pad), 
+            min(w_img, max_x+pad)-max(0, min_x-pad), 
+            min(h_img, max_y+pad)-max(0, min_y-pad))
+
+
+def get_stamp_element_regions(date_region, image_size):
+    """
+    Given the date region, calculate the expected positions of other elements.
+    
+    Returns dict with regions for 'received', 'date', 'by' in page coordinates.
+    """
+    dx, dy, dw, dh = date_region
     img_w, img_h = image_size
     
-    # Look for 3 clusters of text at different y-levels
-    stamp_lines = []
-    current_line = [sorted_regions[0]]
+    # RECEIVED is above the date, roughly same width, 1.5x date height
+    recv_h = int(dh * 1.5)
+    recv_w = int(dw * 2.5)
+    recv_x = dx + dw//2 - recv_w//2
+    recv_y = max(0, dy - int(dh * 1.8))
     
-    for i in range(1, len(sorted_regions)):
-        prev_y = current_line[-1][1]
-        curr_y = sorted_regions[i][1]
-        
-        if abs(curr_y - prev_y) < 20:  # Same line
-            current_line.append(sorted_regions[i])
-        else:
-            if len(current_line) >= 1:
-                # Merge regions on the same line
-                x1 = min(r[0] for r in current_line)
-                y1 = min(r[1] for r in current_line)
-                x2 = max(r[0] + r[2] for r in current_line)
-                y2 = max(r[1] + r[3] for r in current_line)
-                stamp_lines.append((x1, y1, x2 - x1, y2 - y1))
-            current_line = [sorted_regions[i]]
-    
-    if current_line:
-        x1 = min(r[0] for r in current_line)
-        y1 = min(r[1] for r in current_line)
-        x2 = max(r[0] + r[2] for r in current_line)
-        y2 = max(r[1] + r[3] for r in current_line)
-        stamp_lines.append((x1, y1, x2 - x1, y2 - y1))
-    
-    if len(stamp_lines) < 3:
-        return None
-    
-    # Validate the structure: 3 lines stacked vertically
-    # Line spacing should be roughly uniform
-    for i in range(1, min(3, len(stamp_lines))):
-        prev_bottom = stamp_lines[i-1][1] + stamp_lines[i-1][3]
-        curr_top = stamp_lines[i][1]
-        gap = curr_top - prev_bottom
-        if gap < 5 or gap > 100:
-            return None
-    
-    # Validate horizontal centering — stamp lines should be roughly centered
-    for line in stamp_lines[:3]:
-        cx = line[0] + line[2] / 2
-        if abs(cx / img_w - 0.5) > 0.25:  # Not within 25% of center
-            return None
+    # BY is below the date, roughly same width, 0.8x date height
+    by_h = int(dh * 0.8)
+    by_w = int(dw * 2.0)
+    by_x = dx - int(dw * 0.3)  # BY is left-aligned relative to date
+    by_y = min(img_h - by_h, dy + dh + int(dh * 0.3))
     
     return {
-        'received': stamp_lines[0],
-        'date': stamp_lines[1],
-        'by': stamp_lines[2]
+        'received': (recv_x, recv_y, recv_w, recv_h),
+        'date': date_region,
+        'by': (by_x, by_y, by_w, by_h)
     }
 
 
-def ocr_region(image, region, psm=7, padding=5):
-    """OCR a specific region of an image with whitelist."""
+def ocr_received(image, region, debug=False):
+    """
+    OCR the RECEIVED line. This text is often outlined/hollow, so we use
+    fuzzy matching since Tesseract may misread individual characters.
+    """
     x, y, w, h = region
-    # Add padding
-    x1 = max(0, x - padding)
-    y1 = max(0, y - padding)
-    x2 = min(image.size[0], x + w + padding)
-    y2 = min(image.size[1], y + h + padding)
+    img_w, img_h = image.size
+    
+    # Add generous padding
+    pad = 15
+    x1 = max(0, x - pad)
+    y1 = max(0, y - pad)
+    x2 = min(img_w, x + w + pad)
+    y2 = min(img_h, y + h + pad)
     
     cropped = image.crop((x1, y1, x2, y2))
     
-    # Enhance for OCR
-    cropped = cropped.convert("L")
-    enhancer = ImageEnhance.Contrast(cropped)
-    cropped = enhancer.enhance(2.5)
-    cropped = cropped.point(lambda x: 0 if x < 128 else 255, mode="1")
-    cropped = cropped.resize((cropped.width * 3, cropped.height * 3), Image.Resampling.LANCZOS)
+    if debug:
+        cropped.save(DEBUG_DIR / "2_received_crop.png")
     
-    try:
-        config = f"--psm {psm} -c tessedit_char_whitelist={WHITELIST}"
-        text = pytesseract.image_to_string(cropped, config=config).upper().strip()
-        return text
-    except Exception:
-        return ""
+    # Strategy: use edge detection + fill to solidify outlined text
+    gray = np.array(cropped.convert("L"))
+    
+    best_text = ""
+    
+    # Method 1: Aggressive morphological close to fill outlined text
+    for thresh_val in [180, 190, 200]:
+        _, binary = cv2.threshold(gray, thresh_val, 255, cv2.THRESH_BINARY_INV)
+        
+        # Close gaps in outlined text
+        for kernel_size in [3, 5, 7]:
+            kernel = np.ones((kernel_size, kernel_size), np.uint8)
+            filled = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=3)
+            filled = cv2.dilate(filled, np.ones((2,2), np.uint8), iterations=1)
+            
+            # Invert for Tesseract (black text on white)
+            result = 255 - filled
+            result_img = Image.fromarray(result)
+            result_img = result_img.resize(
+                (result_img.width * 4, result_img.height * 4),
+                Image.Resampling.LANCZOS
+            )
+            
+            for psm in [6, 7, 8]:
+                try:
+                    config = f"--psm {psm} -c tessedit_char_whitelist={WHITELIST}"
+                    text = pytesseract.image_to_string(result_img, config=config).upper().strip()
+                    if text:
+                        best_text += " " + text
+                except Exception:
+                    pass
+    
+    # Method 2: Direct OCR on grayscale with high contrast
+    cropped_gray = cropped.convert("L")
+    enhancer = ImageEnhance.Contrast(cropped_gray)
+    cropped_gray = enhancer.enhance(3.0)
+    cropped_gray = cropped_gray.resize(
+        (cropped_gray.width * 4, cropped_gray.height * 4),
+        Image.Resampling.LANCZOS
+    )
+    
+    for psm in [6, 7, 8, 13]:
+        try:
+            config = f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            text = pytesseract.image_to_string(cropped_gray, config=config).upper().strip()
+            if text:
+                best_text += " " + text
+        except Exception:
+            pass
+    
+    # Method 3: Adaptive threshold
+    adaptive = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                                      cv2.THRESH_BINARY_INV, 11, 2)
+    adaptive_inv = 255 - adaptive
+    adaptive_img = Image.fromarray(adaptive_inv)
+    adaptive_img = adaptive_img.resize(
+        (adaptive_img.width * 4, adaptive_img.height * 4),
+        Image.Resampling.LANCZOS
+    )
+    
+    for psm in [6, 7]:
+        try:
+            config = f"--psm {psm} -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            text = pytesseract.image_to_string(adaptive_img, config=config).upper().strip()
+            if text:
+                best_text += " " + text
+        except Exception:
+            pass
+    
+    return best_text
 
 
-def check_red_hue(image, region):
+def is_close_to_received(text):
     """
-    Check if a region contains red-hued pixels.
-    Returns the percentage of reddish pixels in the region.
+    Check if text contains a word that's close to "RECEIVED".
+    Uses edit distance to handle OCR errors from outlined fonts.
     """
-    arr = np.array(image)
+    def edit_distance(s1, s2):
+        if len(s1) < len(s2):
+            return edit_distance(s2, s1)
+        if len(s2) == 0:
+            return len(s1)
+        prev_row = range(len(s2) + 1)
+        for i, c1 in enumerate(s1):
+            curr_row = [i + 1]
+            for j, c2 in enumerate(s2):
+                insertions = prev_row[j + 1] + 1
+                deletions = curr_row[j] + 1
+                substitutions = prev_row[j] + (c1 != c2)
+                curr_row.append(min(insertions, deletions, substitutions))
+            prev_row = curr_row
+        return prev_row[-1]
+    
+    words = text.split()
+    for word in words:
+        # Only check words of similar length (7-9 chars for "RECEIVED")
+        if 7 <= len(word) <= 9:
+            dist = edit_distance(word, "RECEIVED")
+            if dist <= 2:  # Allow up to 2 character errors
+                return True
+    return False
+
+
+def ocr_by(image, region, debug=False):
+    """OCR the BY: line (solid text, should be easier)."""
     x, y, w, h = region
+    img_w, img_h = image.size
     
-    # Clamp to image bounds
-    x2 = min(x + w, arr.shape[1])
-    y2 = min(y + h, arr.shape[0])
-    
-    if x >= x2 or y >= y2:
-        return 0.0
-    
-    region_arr = arr[y:y2, x:x2]
-    
-    if len(region_arr.shape) < 3:
-        return 0.0
-    
-    r = region_arr[:, :, 0].astype(int)
-    g = region_arr[:, :, 1].astype(int)
-    b = region_arr[:, :, 2].astype(int)
-    
-    # Red: R is significantly higher than G and B
-    red_pixels = np.sum((r > g + 15) & (r > b + 15) & (r > 80))
-    total_pixels = (x2 - x) * (y2 - y)
-    
-    if total_pixels == 0:
-        return 0.0
-    
-    return red_pixels / total_pixels
-
-
-def ocr_red_date(image, date_region, debug=False):
-    """
-    OCR the date from the red channel to avoid black text interference.
-    """
-    arr = np.array(image)
-    x, y, w, h = date_region
-    
-    # Expand region slightly
     pad = 10
     x1 = max(0, x - pad)
     y1 = max(0, y - pad)
-    x2 = min(arr.shape[1], x + w + pad)
-    y2 = min(arr.shape[0], y + h + pad)
+    x2 = min(img_w, x + w + pad)
+    y2 = min(img_h, y + h + pad)
     
-    region_arr = arr[y1:y2, x1:x2]
-    
-    if len(region_arr.shape) < 3:
-        return ""
-    
-    # Isolate red channel
-    r = region_arr[:, :, 0].astype(int)
-    g = region_arr[:, :, 1].astype(int)
-    b = region_arr[:, :, 2].astype(int)
-    
-    # Create red-only image
-    red_only = np.zeros_like(region_arr)
-    red_mask = (r > g + 15) & (r > b + 15) & (r > 80)
-    red_only[red_mask] = [255, 255, 255]
-    
-    red_image = Image.fromarray(red_only.astype(np.uint8))
-    
-    # Invert so text is black on white
-    red_inverted = ImageChops.invert(red_image.convert("RGB"))
-    
-    # Enhance
-    red_inverted = red_inverted.convert("L")
-    enhancer = ImageEnhance.Contrast(red_inverted)
-    red_inverted = enhancer.enhance(2.5)
-    red_inverted = red_inverted.point(lambda x: 0 if x < 100 else 255, mode="1")
-    red_inverted = red_inverted.resize(
-        (red_inverted.width * 4, red_inverted.height * 4), Image.Resampling.LANCZOS
-    )
+    cropped = image.crop((x1, y1, x2, y2))
     
     if debug:
-        red_inverted.save(DEBUG_DIR / "5_red_date_processed.png")
+        cropped.save(DEBUG_DIR / "3_by_crop.png")
     
-    # OCR with multiple PSM modes
+    best_text = ""
+    
+    # Multiple preprocessing approaches
+    gray = np.array(cropped.convert("L"))
+    
+    for thresh in [128, 150, 180, 200]:
+        _, binary = cv2.threshold(gray, thresh, 255, cv2.THRESH_BINARY_INV)
+        binary_pil = Image.fromarray(255 - binary)
+        binary_pil = binary_pil.resize(
+            (binary_pil.width * 4, binary_pil.height * 4),
+            Image.Resampling.LANCZOS
+        )
+        
+        for psm in [6, 7, 8, 13]:
+            try:
+                config = f"--psm {psm} -c tessedit_char_whitelist={WHITELIST}"
+                text = pytesseract.image_to_string(binary_pil, config=config).upper().strip()
+                if text:
+                    best_text += " " + text
+            except Exception:
+                pass
+    
+    return best_text
+
+
+def ocr_red_date(image, date_region, debug=False):
+    """OCR the date from red channel isolation."""
+    arr = np.array(image)
+    if len(arr.shape) < 3:
+        return ""
+    
+    x, y, w, h = date_region
+    pad = 10
+    x1, y1 = max(0, x-pad), max(0, y-pad)
+    x2, y2 = min(arr.shape[1], x+w+pad), min(arr.shape[0], y+h+pad)
+    
+    region = arr[y1:y2, x1:x2]
+    
+    r = region[:,:,0].astype(int)
+    g = region[:,:,1].astype(int)
+    b = region[:,:,2].astype(int)
+    
+    red_only = np.zeros_like(region)
+    red_mask = (r > g+15) & (r > b+15) & (r > 80)
+    red_only[red_mask] = [255, 255, 255]
+    
+    red_img = Image.fromarray(red_only.astype(np.uint8))
+    red_inv = ImageChops.invert(red_img.convert("RGB"))
+    
+    red_inv = red_inv.convert("L")
+    enhancer = ImageEnhance.Contrast(red_inv)
+    red_inv = enhancer.enhance(2.5)
+    red_inv = red_inv.point(lambda x: 0 if x < 100 else 255, mode="1")
+    red_inv = red_inv.resize((red_inv.width*4, red_inv.height*4), Image.Resampling.LANCZOS)
+    
+    if debug:
+        red_inv.save(DEBUG_DIR / "4_red_date.png")
+    
     text = ""
-    for psm in [6, 7, 8, 13, 4]:
+    for psm in [6, 7, 8, 13]:
         try:
             config = f"--psm {psm} -c tessedit_char_whitelist={WHITELIST}"
-            result = pytesseract.image_to_string(red_inverted, config=config).upper().strip()
+            result = pytesseract.image_to_string(red_inv, config=config).upper().strip()
             text += " " + result
         except Exception:
             pass
@@ -359,14 +359,7 @@ def ocr_red_date(image, date_region, debug=False):
 
 
 def parse_date_from_text(text):
-    """
-    Try to find a date in OCR text and return a date object if valid.
-    Handles formats like:
-      SEP 02 2026
-      SEP02 2026
-      SEP 2 2026
-    Returns None if no valid date found.
-    """
+    """Parse date from text. Returns date object or None."""
     matches = re.findall(
         r"\b(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s*(\d{1,2})\s*(\d{4})\b",
         text
@@ -385,105 +378,88 @@ def parse_date_from_text(text):
 
 def page_has_stamp(image, debug=False) -> bool:
     """
-    Multi-signal stamp detection for 100% accuracy.
+    Multi-signal stamp detection.
+    All of the following must be true:
+      1. Red date region found
+      2. "RECEIVED" OCR'd from expected region
+      3. "BY:" OCR'd from expected region  
+      4. Date parsed from red channel
+      5. Date within window
     """
     if debug:
         DEBUG_DIR.mkdir(exist_ok=True)
         image.save(DEBUG_DIR / "0_original.png")
-
-    # Step 1: Crop to top region
-    top_region = preprocess_top_region(image)
-    top_w, top_h = top_region.size
-
-    if debug:
-        top_region.save(DEBUG_DIR / "1_top_region.png")
-
-    # Step 2: Find text regions
-    regions = find_text_regions(top_region, debug=debug)
-    regions = merge_nearby_regions(regions)
-
-    if debug:
-        print(f"  -> Found {len(regions)} text regions")
-
-    # Step 3: Identify stamp structure
-    structure = identify_stamp_structure(regions, (top_w, top_h), debug=debug)
-
-    if structure is None:
+    
+    # 1. Find red date
+    date_region = find_red_date_region(image, debug=debug)
+    if date_region is None:
         if debug:
-            print("  -> No valid stamp structure found")
+            print("  -> No red date region found")
         return False
-
+    
     if debug:
-        print(f"  -> Stamp structure identified:")
-        print(f"     RECEIVED: {structure['received']}")
-        print(f"     Date: {structure['date']}")
-        print(f"     BY: {structure['by']}")
-
-    # Step 4: OCR "RECEIVED" line
-    received_text = ocr_region(top_region, structure['received'], psm=7)
-    has_received = "RECEIVED" in received_text
-
+        print(f"  -> Red date region: x={date_region[0]}, y={date_region[1]}, w={date_region[2]}, h={date_region[3]}")
+    
+    # 2. Get all element regions
+    regions = get_stamp_element_regions(date_region, image.size)
+    
+    # 3. OCR RECEIVED (with fuzzy matching for outlined text)
+    received_text = ocr_received(image, regions['received'], debug=debug)
+    has_received = "RECEIVED" in received_text or is_close_to_received(received_text)
+    
     if debug:
-        print(f"  -> Received OCR: '{received_text}' (match={has_received})")
-
+        print(f"  -> Received OCR: {repr(received_text[:300])}")
+        print(f"  -> has_received={has_received}")
+    
     if not has_received:
         if debug:
-            print("  -> 'RECEIVED' not found in expected region — rejecting")
+            print("  -> 'RECEIVED' not found — rejecting")
         return False
-
-    # Step 5: OCR "BY:" line
-    by_text = ocr_region(top_region, structure['by'], psm=7)
-    has_by = "BY:" in by_text or "BY :" in by_text
-
+    
+    # 4. OCR BY
+    by_text = ocr_by(image, regions['by'], debug=debug)
+    has_by = "BY:" in by_text or "BY :" in by_text or "BY" in by_text
+    
     if debug:
-        print(f"  -> BY OCR: '{by_text}' (match={has_by})")
-
+        print(f"  -> BY OCR: {repr(by_text[:200])}")
+        print(f"  -> has_by={has_by}")
+    
     if not has_by:
         if debug:
-            print("  -> 'BY:' not found in expected region — rejecting")
+            print("  -> 'BY:' not found — rejecting")
         return False
-
-    # Step 6: Check date region has red hue (confirmation)
-    red_pct = check_red_hue(top_region, structure['date'])
-    has_red = red_pct > 0.10  # At least 10% reddish pixels
-
+    
+    # 5. OCR date from red channel
+    date_text = ocr_red_date(image, regions['date'], debug=debug)
+    
     if debug:
-        print(f"  -> Date region red hue: {red_pct:.2%} (threshold: 10%)")
-
-    if not has_red:
-        if debug:
-            print("  -> Date region lacks red hue — trying without color check")
-
-    # Step 7: OCR the date from red channel
-    date_text = ocr_red_date(top_region, structure['date'], debug=debug)
-
-    if debug:
-        print(f"  -> Date OCR: '{date_text}'")
-
-    # Step 8: Parse and validate date
+        print(f"  -> Date OCR: {repr(date_text)}")
+    
+    # 6. Parse and validate date
     found_date = parse_date_from_text(date_text)
     if found_date is None:
         if debug:
             print("  -> Could not parse date — rejecting")
         return False
-
+    
     month_str = found_date.strftime("%b").upper()
     day_str = str(found_date.day)
     year_str = str(found_date.year)
     date_str = f"{month_str} {day_str} {year_str}"
     date_str_nospace = f"{month_str}{day_str}{year_str}"
-
+    
     if date_str in RECENT_DATES or date_str_nospace in RECENT_DATES_NOSPACE:
         if debug:
             print(f"  ✅ STAMP CONFIRMED: date={date_str}")
         return True
-
+    
     if debug:
         print(f"  -> Date {date_str} not in window — rejecting")
     return False
 
 
 def split_pdf(input_pdf: str, output_dir: str, dpi: int = 300, debug: bool = False):
+    """Split PDF at stamped pages."""
     input_path = Path(input_pdf)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -492,7 +468,6 @@ def split_pdf(input_pdf: str, output_dir: str, dpi: int = 300, debug: bool = Fal
     reader = PdfReader(str(input_path))
     total = len(reader.pages)
     print(f"Total pages: {total}")
-
     print(f"Looking for stamps dated: {sorted(RECENT_DATES)}")
 
     convert_kwargs = {"dpi": dpi, "fmt": "png", "thread_count": 4}
