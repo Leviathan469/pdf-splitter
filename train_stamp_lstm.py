@@ -83,7 +83,7 @@ def generate_lstmf(training_dir, output_dir):
         
         # Generate .lstmf using tesseract
         cmd = [
-            'tesseract', str(tiff_file), str(lstmf_file.with_suffix('')),
+            'tesseract', str(tif_file), str(lstmf_file.with_suffix('')),
             '--psm', '6', 'lstm.train'
         ]
         
@@ -117,24 +117,31 @@ def train_lstm_model(lstmf_files, output_dir, model_name="stamp"):
     
     # Find eng.lstm (the model to fine-tune from)
     eng_lstm = None
+    
+    # Try to find existing eng.lstm
     for path in [
         Path(TESSDATA_DIR) / "eng.lstm",
         Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tessdata" / "eng.lstm",
+        Path("eng_.lstm"),
     ]:
         if path.exists():
             eng_lstm = path
             break
     
     if not eng_lstm:
-        # Try to extract from eng.traineddata
+        # Extract from eng.traineddata
         print("Extracting eng.lstm from eng.traineddata...")
-        cmd = ['combine_tessdata', '-e', str(Path(TESSDATA_DIR) / "eng.traineddata"), 'eng_']
-        subprocess.run(cmd, capture_output=True)
-        if Path("eng_.lstm").exists():
+        cmd = [
+            str(Path(TESSDATA_DIR) / "combine_tessdata.exe"),
+            "-e",
+            str(Path(TESSDATA_DIR) / "eng.traineddata"),
+            "eng_"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0 and Path("eng_.lstm").exists():
             eng_lstm = Path("eng_.lstm").resolve()
         else:
             print("ERROR: Could not find or extract eng.lstm")
-            print("LSTM training requires Tesseract to be built with LSTM support.")
             return False
     
     print(f"Using base model: {eng_lstm}")
