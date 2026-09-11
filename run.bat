@@ -26,6 +26,8 @@ if errorlevel 1 (
 echo.
 echo Starting PDF Stamp Splitter...
 echo.
-python split_pdf_gui.py
 
-pause
+REM Use pythonw to avoid console window
+start "" pythonw split_pdf_gui.py
+
+exit
