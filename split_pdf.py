@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PDF Splitter - Position-agnostic version.
-Stamps can appear anywhere on the page, not just upper-left.
+PDF Splitter - Optimized for speed.
+Key: Lower DPI + JPEG + grayscale = much faster extraction and processing.
 """
 import argparse
 import cv2
@@ -17,8 +17,11 @@ except ImportError:
     sys.exit(1)
 
 
-def extract_pages(pdf_path, output_dir, dpi=300):
-    """Convert PDF pages to PNG images using pdftoppm."""
+def extract_pages(pdf_path, output_dir, dpi=150):
+    """
+    Convert PDF pages to images using pdftoppm.
+    Uses JPEG instead of PNG for 3-5x faster I/O.
+    """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -27,9 +30,9 @@ def extract_pages(pdf_path, output_dir, dpi=300):
         print("ERROR: pdftoppm not found. Install Poppler or add to PATH.")
         sys.exit(1)
     
-    print(f"Extracting pages from {pdf_path}...")
+    print(f"Extracting pages from {pdf_path} at {dpi} DPI...")
     result = subprocess.run([
-        str(pdftoppm), "-png", "-r", str(dpi),
+        str(pdftoppm), "-jpeg", "-r", str(dpi),  # JPEG for speed
         str(pdf_path),
         str(output_dir / "page")
     ], capture_output=True, text=True)
@@ -38,7 +41,7 @@ def extract_pages(pdf_path, output_dir, dpi=300):
         print(f"ERROR: pdftoppm failed: {result.stderr}")
         sys.exit(1)
     
-    pages = sorted(output_dir.glob("page-*.png"))
+    pages = sorted(output_dir.glob("page-*.jpg"))
     print(f"  Extracted {len(pages)} pages")
     return pages
 
@@ -62,13 +65,11 @@ def find_pdftoppm():
 
 
 def has_red_ink(page_img):
-    """
-    Quick pre-check: does this page have any red ink anywhere?
-    Stamps have red dates, so this is a fast way to skip blank pages.
-    """
-    hsv = cv2.cvtColor(page_img, cv2.COLOR_BGR2HSV)
+    """Quick pre-check: does this page have any red ink?"""
+    # Downscale for faster processing
+    small = cv2.resize(page_img, (page_img.shape[1]//4, page_img.shape[0]//4))
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
     
-    # Red color range in HSV
     lower_red1 = np.array([0, 100, 100])
     upper_red1 = np.array([10, 255, 255])
     lower_red2 = np.array([160, 100, 100])
@@ -78,32 +79,18 @@ def has_red_ink(page_img):
     mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
     red_mask = mask1 | mask2
     
-    # Count red pixels
-    red_pixels = np.sum(red_mask > 0)
-    
-    return red_pixels > 50  # Very low threshold
+    return np.sum(red_mask > 0) > 10  # Lower threshold for smaller image
 
 
 def detect_stamp(page_img, template, threshold=0.35):
-    """
-    Detect if stamp exists in page image using template matching.
-    Searches the entire page - stamp can be anywhere.
-    
-    Key insight: real stamps match at scale ~1.0, false positives at wrong scales.
-    We boost confidence for matches near scale=1.0 and penalize others.
-    
-    Returns: (found, confidence, scale)
-    """
-    # Quick pre-check first
+    """Detect if stamp exists using template matching."""
     if not has_red_ink(page_img):
         return False, 0.0, 0.0
     
     page_gray = cv2.cvtColor(page_img, cv2.COLOR_BGR2GRAY)
     template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     
-    # Search scales from 0.7 to 1.3
     scales = np.arange(0.7, 1.35, 0.05)
-    
     best_confidence = 0
     best_scale = 0
     
@@ -121,7 +108,6 @@ def detect_stamp(page_img, template, threshold=0.35):
             best_confidence = max_val
             best_scale = scale
     
-    # Apply scale-based confidence adjustment
     scale_penalty = abs(best_scale - 1.0)
     
     if scale_penalty < 0.15:
@@ -135,7 +121,7 @@ def detect_stamp(page_img, template, threshold=0.35):
     return found, adjusted_confidence, best_scale
 
 
-def split_pdf_by_stamps(pdf_path, template, threshold=0.35, dpi=300, work_dir=None):
+def split_pdf_by_stamps(pdf_path, template, threshold=0.35, dpi=150, work_dir=None):
     """Split PDF into multiple PDFs based on stamp detection."""
     pdf_path = Path(pdf_path)
     
@@ -219,7 +205,7 @@ def main():
     parser.add_argument("pdf", help="Input PDF file path")
     parser.add_argument("--template", required=True, help="Stamp template image path")
     parser.add_argument("--threshold", type=float, default=0.35, help="Detection threshold (0-1)")
-    parser.add_argument("--dpi", type=int, default=300, help="DPI for PDF rendering")
+    parser.add_argument("--dpi", type=int, default=150, help="DPI for PDF rendering (150=fast, 300=quality)")
     parser.add_argument("--output-dir", required=True, help="Output directory for split PDFs")
     
     args = parser.parse_args()
