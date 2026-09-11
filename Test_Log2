@@ -1,0 +1,43 @@
+PS C:\Users\acollazo> python .\split_pdf.py Test2.pdf --template stamp_template.png --output-dir "C:\Users\acollazo\Output"
+Template loaded: (336, 526, 3)
+Extracting pages from Test2.pdf at 300 DPI...
+  Extracted 9 pages
+
+Detecting stamps on 9 pages...
+  Page   1 (page-1.png                    ): ✓ STAMP  (conf=0.45, scale=1.00)
+  Page   2 (page-2.png                    ): ✓ STAMP  (conf=0.57, scale=1.00)
+  Page   3 (page-3.png                    ): ✓ STAMP  (conf=0.52, scale=1.00)
+  Page   4 (page-4.png                    ): ✓ STAMP  (conf=0.63, scale=1.00)
+  Page   5 (page-5.png                    ): ✓ STAMP  (conf=0.96, scale=1.00)
+  Page   6 (page-6.png                    ): ✓ STAMP  (conf=0.42, scale=1.00)
+  Page   7 (page-7.png                    ): ✓ STAMP  (conf=0.52, scale=1.00)
+  Page   8 (page-8.png                    ): ✗ None   (conf=0.00, scale=0.00)
+  Page   9 (page-9.png                    ): ✗ None   (conf=0.00, scale=0.00)
+
+============================================================
+SPLIT RESULTS
+============================================================
+Total pages: 9
+Stamps found on pages: [1, 2, 3, 4, 5, 6, 7]
+Number of output PDFs: 7
+  PDF 1: Pages 1-1 (1 pages)
+  PDF 2: Pages 2-2 (1 pages)
+  PDF 3: Pages 3-3 (1 pages)
+  PDF 4: Pages 4-4 (1 pages)
+  PDF 5: Pages 5-5 (1 pages)
+  PDF 6: Pages 6-6 (1 pages)
+  PDF 7: Pages 7-9 (3 pages)
+
+Creating split PDFs...
+  Created: Test2_part001.pdf (1 pages)
+  Created: Test2_part002.pdf (1 pages)
+  Created: Test2_part003.pdf (1 pages)
+  Created: Test2_part004.pdf (1 pages)
+  Created: Test2_part005.pdf (1 pages)
+  Created: Test2_part006.pdf (1 pages)
+  Created: Test2_part007.pdf (3 pages)
+
+============================================================
+COMPLETE
+============================================================
+Created 7 PDF files in C:\Users\acollazo\Output
