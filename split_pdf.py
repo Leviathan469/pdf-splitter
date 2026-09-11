@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
-PDF Splitter - Optimized for speed.
-Key: Lower DPI + JPEG + grayscale = much faster extraction and processing.
+PDF Splitter - Balanced speed and accuracy.
 """
 import argparse
 import cv2
@@ -17,11 +16,8 @@ except ImportError:
     sys.exit(1)
 
 
-def extract_pages(pdf_path, output_dir, dpi=150):
-    """
-    Convert PDF pages to images using pdftoppm.
-    Uses JPEG instead of PNG for 3-5x faster I/O.
-    """
+def extract_pages(pdf_path, output_dir, dpi=300):
+    """Convert PDF pages to images using pdftoppm."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
@@ -32,7 +28,7 @@ def extract_pages(pdf_path, output_dir, dpi=150):
     
     print(f"Extracting pages from {pdf_path} at {dpi} DPI...")
     result = subprocess.run([
-        str(pdftoppm), "-jpeg", "-r", str(dpi),  # JPEG for speed
+        str(pdftoppm), "-png", "-r", str(dpi),
         str(pdf_path),
         str(output_dir / "page")
     ], capture_output=True, text=True)
@@ -41,7 +37,7 @@ def extract_pages(pdf_path, output_dir, dpi=150):
         print(f"ERROR: pdftoppm failed: {result.stderr}")
         sys.exit(1)
     
-    pages = sorted(output_dir.glob("page-*.jpg"))
+    pages = sorted(output_dir.glob("page-*.png"))
     print(f"  Extracted {len(pages)} pages")
     return pages
 
@@ -79,7 +75,7 @@ def has_red_ink(page_img):
     mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
     red_mask = mask1 | mask2
     
-    return np.sum(red_mask > 0) > 10  # Lower threshold for smaller image
+    return np.sum(red_mask > 0) > 10
 
 
 def detect_stamp(page_img, template, threshold=0.35):
@@ -121,7 +117,7 @@ def detect_stamp(page_img, template, threshold=0.35):
     return found, adjusted_confidence, best_scale
 
 
-def split_pdf_by_stamps(pdf_path, template, threshold=0.35, dpi=150, work_dir=None):
+def split_pdf_by_stamps(pdf_path, template, threshold=0.35, dpi=300, work_dir=None):
     """Split PDF into multiple PDFs based on stamp detection."""
     pdf_path = Path(pdf_path)
     
@@ -205,7 +201,7 @@ def main():
     parser.add_argument("pdf", help="Input PDF file path")
     parser.add_argument("--template", required=True, help="Stamp template image path")
     parser.add_argument("--threshold", type=float, default=0.35, help="Detection threshold (0-1)")
-    parser.add_argument("--dpi", type=int, default=150, help="DPI for PDF rendering (150=fast, 300=quality)")
+    parser.add_argument("--dpi", type=int, default=300, help="DPI for PDF rendering")
     parser.add_argument("--output-dir", required=True, help="Output directory for split PDFs")
     
     args = parser.parse_args()
