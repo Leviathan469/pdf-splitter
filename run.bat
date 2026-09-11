@@ -27,7 +27,7 @@ echo.
 echo Starting PDF Stamp Splitter...
 echo.
 
-REM Use pythonw to avoid console window
-start "" pythonw split_pdf_gui.py
+REM Use VBS to run GUI without console window
+wscript run_gui.vbs
 
 exit
