@@ -11,7 +11,7 @@ split_pdf.bat "C:\path\to\your_document.pdf"
 
 ### Any OS (Python)
 ```bash
-python split_pdf.py "document.pdf" --template stamp_template.png --output-dir output_folder
+python split_pdf.py "document.pdf" --template Stamp_NoDate.png --output-dir output_folder
 ```
 
 ## What It Does
@@ -39,7 +39,7 @@ pip install opencv-python numpy pypdf
 
 ### Basic
 ```bash
-python split_pdf.py input.pdf --template stamp_template.png --output-dir split_output
+python split_pdf.py input.pdf --template Stamp_NoDate.png --output-dir split_output
 ```
 
 ### Options
@@ -48,19 +48,19 @@ python split_pdf.py input.pdf --template stamp_template.png --output-dir split_o
 |------|---------|-------------|
 | `--template` | required | Path to stamp template image |
 | `--output-dir` | required | Directory for split PDFs |
-| `--threshold` | 0.5 | Detection sensitivity (0.0-1.0) |
+| `--threshold` | 0.4 | Detection sensitivity (0.0-1.0) |
 | `--dpi` | 300 | DPI for PDF rendering |
 
 ### Examples
 ```bash
 # More sensitive detection (catches faint stamps)
-python split_pdf.py doc.pdf --template stamp.png --output-dir out --threshold 0.4
+python split_pdf.py doc.pdf --template Stamp_NoDate.png --output-dir out --threshold 0.3
 
 # Stricter detection (fewer false positives)
-python split_pdf.py doc.pdf --template stamp.png --output-dir out --threshold 0.7
+python split_pdf.py doc.pdf --template Stamp_NoDate.png --output-dir out --threshold 0.5
 
 # Lower DPI for faster processing
-python split_pdf.py doc.pdf --template stamp.png --output-dir out --dpi 200
+python split_pdf.py doc.pdf --template Stamp_NoDate.png --output-dir out --dpi 200
 ```
 
 ## Files
@@ -69,21 +69,21 @@ python split_pdf.py doc.pdf --template stamp.png --output-dir out --dpi 200
 |------|---------|
 | `split_pdf.py` | Main script |
 | `split_pdf.bat` | Windows batch wrapper |
-| `stamp_template.png` | Your stamp template |
-| `stamp_template.pdf` | Template source (for editing) |
+| `Stamp_NoDate.png` | Template image (RECEIVED + BY line) |
+| `Stamp_NoDate.pdf` | Template source (for editing) |
 
 ## Using Your Own Stamp
 
-1. Scan a clear impression of your stamp (300+ DPI)
-2. Crop to include just the stamp
-3. Save as `stamp_template.png`
+1. Scan your stamp (300+ DPI, good contrast)
+2. Include just the RECEIVED text and BY line (not the date)
+3. Save as `Stamp_NoDate.png`
 4. Use `--template your_stamp.png`
 
 ## How Detection Works
 
 Uses **OpenCV template matching**:
 - Compares the stamp template against each page
-- Tries multiple scales (0.3x to 2.0x) for size variation
+- Tries multiple scales (0.2x to 2.0x) for size variation
 - Returns confidence score (0.0 = no match, 1.0 = perfect match)
 - Pages with confidence ≥ threshold are marked as "stamp found"
 
@@ -100,8 +100,8 @@ Uses **OpenCV template matching**:
 
 | Problem | Solution |
 |---------|----------|
-| Stamp not detected | Lower threshold: `--threshold 0.4` |
-| False positives | Raise threshold: `--threshold 0.7` |
+| Stamp not detected | Lower threshold: `--threshold 0.3` |
+| False positives | Raise threshold: `--threshold 0.5` |
 | Wrong pages split | Try a better/cleaner stamp template |
 | Slow processing | Lower DPI: `--dpi 200` |
 | Poppler not found | Install via winget/brew/apt |

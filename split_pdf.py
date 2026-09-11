@@ -3,7 +3,7 @@
 PDF Splitter - Splits a large PDF into smaller ones based on RECEIVED stamp detection.
 
 Usage:
-    python split_pdf.py input.pdf --template stamp_template.png --output-dir split_output
+    python split_pdf.py input.pdf --template Stamp_NoDate.png --output-dir split_output
 
 Requires:
     - OpenCV (cv2): pip install opencv-python
@@ -30,7 +30,6 @@ def extract_pages(pdf_path, output_dir, dpi=300):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Find pdftoppm
     pdftoppm = find_pdftoppm()
     if pdftoppm is None:
         print("ERROR: pdftoppm not found. Install Poppler or add to PATH.")
@@ -54,9 +53,8 @@ def extract_pages(pdf_path, output_dir, dpi=300):
 
 def find_pdftoppm():
     """Find pdftoppm executable."""
-    # Common locations
     paths = [
-        "pdftoppm",  # In PATH
+        "pdftoppm",
         r"C:\Program Files\poppler-24.07.0\Library\bin\pdftoppm.exe",
         r"C:\Program Files\poppler-25.07.0\Library\bin\pdftoppm.exe",
         r"C:\Users\aiden\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin\pdftoppm.exe",
@@ -73,7 +71,7 @@ def find_pdftoppm():
     return None
 
 
-def detect_stamp(page_img, template, threshold=0.5):
+def detect_stamp(page_img, template, threshold=0.4):
     """
     Detect if stamp exists in page image using template matching.
     Returns (found, confidence, scale).
@@ -81,8 +79,7 @@ def detect_stamp(page_img, template, threshold=0.5):
     page_gray = cv2.cvtColor(page_img, cv2.COLOR_BGR2GRAY)
     template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     
-    # Try multiple scales
-    scales = np.arange(0.3, 2.1, 0.1)
+    scales = np.arange(0.2, 2.1, 0.05)
     
     best_confidence = 0
     best_scale = 0
@@ -105,22 +102,7 @@ def detect_stamp(page_img, template, threshold=0.5):
     return found, best_confidence, best_scale
 
 
-def find_stamp_template(template_path):
-    """Load and validate stamp template."""
-    if template_path is None:
-        print("ERROR: No template path provided")
-        sys.exit(1)
-    
-    template = cv2.imread(str(template_path))
-    if template is None:
-        print(f"ERROR: Could not load template from {template_path}")
-        sys.exit(1)
-    
-    print(f"Template loaded: {template.shape}")
-    return template
-
-
-def split_pdf_by_stamps(pdf_path, template, threshold=0.5, dpi=300, work_dir=None):
+def split_pdf_by_stamps(pdf_path, template, threshold=0.4, dpi=300, work_dir=None):
     """
     Split PDF into multiple PDFs based on stamp detection.
     Returns list of page ranges for each output PDF.
@@ -132,14 +114,12 @@ def split_pdf_by_stamps(pdf_path, template, threshold=0.5, dpi=300, work_dir=Non
     else:
         work_dir = Path(work_dir)
     
-    # Extract pages as PNG
     pages = extract_pages(pdf_path, work_dir, dpi)
     
     if not pages:
         print("ERROR: No pages extracted from PDF")
         return []
     
-    # Detect stamps on each page
     print(f"\nDetecting stamps on {len(pages)} pages...")
     stamp_pages = []
     
@@ -157,7 +137,6 @@ def split_pdf_by_stamps(pdf_path, template, threshold=0.5, dpi=300, work_dir=Non
         print("\nWARNING: No stamps detected. PDF will not be split.")
         return [list(range(len(pages)))]
     
-    # Calculate page ranges for each output PDF
     ranges = []
     for i, stamp_idx in enumerate(stamp_pages):
         start = stamp_idx
@@ -184,7 +163,6 @@ def create_split_pdfs(pdf_path, ranges, output_dir):
     
     print(f"\nCreating split PDFs...")
     
-    # Read the input PDF
     reader = PdfReader(str(pdf_path))
     
     output_files = []
@@ -194,7 +172,6 @@ def create_split_pdfs(pdf_path, ranges, output_dir):
         for page_idx in page_range:
             writer.add_page(reader.pages[page_idx])
         
-        # Name output file based on original name and part number
         stem = pdf_path.stem
         output_path = output_dir / f"{stem}_part{i+1:03d}.pdf"
         
@@ -211,19 +188,21 @@ def main():
     parser = argparse.ArgumentParser(description="Split PDF by RECEIVED stamp detection")
     parser.add_argument("pdf", help="Input PDF file path")
     parser.add_argument("--template", required=True, help="Stamp template image path")
-    parser.add_argument("--threshold", type=float, default=0.5, help="Detection threshold (0-1)")
+    parser.add_argument("--threshold", type=float, default=0.4, help="Detection threshold (0-1)")
     parser.add_argument("--dpi", type=int, default=300, help="DPI for PDF rendering")
     parser.add_argument("--output-dir", required=True, help="Output directory for split PDFs")
     
     args = parser.parse_args()
     
-    # Load template
-    template = find_stamp_template(args.template)
+    template = cv2.imread(str(args.template))
+    if template is None:
+        print(f"ERROR: Could not load template from {args.template}")
+        sys.exit(1)
     
-    # Get temp directory for page images
+    print(f"Template loaded: {template.shape}")
+    
     work_dir = Path(args.output_dir) / "temp_pages"
     
-    # Detect stamps and get page ranges
     ranges = split_pdf_by_stamps(
         args.pdf,
         template,
@@ -236,7 +215,6 @@ def main():
         print("ERROR: Could not determine page ranges")
         sys.exit(1)
     
-    # Create split PDFs
     output_files = create_split_pdfs(args.pdf, ranges, args.output_dir)
     
     print(f"\n{'='*60}")
@@ -244,7 +222,6 @@ def main():
     print(f"{'='*60}")
     print(f"Created {len(output_files)} PDF files in {args.output_dir}")
     
-    # Cleanup temp files
     import shutil
     if work_dir.exists():
         shutil.rmtree(work_dir)
