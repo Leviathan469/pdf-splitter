@@ -19,7 +19,13 @@ except ImportError:
 def extract_pages(pdf_path, output_dir, dpi=300):
     """Convert PDF pages to images using pdftoppm."""
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Clean up any old page files from previous runs
+    if output_dir.exists():
+        for old_file in output_dir.glob("page-*"):
+            old_file.unlink()
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
     
     pdftoppm = find_pdftoppm()
     if pdftoppm is None:
