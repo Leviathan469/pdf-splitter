@@ -55,9 +55,7 @@ def find_pdftoppm():
     """Find pdftoppm executable."""
     paths = [
         "pdftoppm",
-        r"C:\Program Files\poppler-24.07.0\Library\bin\pdftoppm.exe",
-        r"C:\Program Files\poppler-25.07.0\Library\bin\pdftoppm.exe",
-        r"C:\Users\aiden\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin\pdftoppm.exe",
+        r"C:\Users\acollazo\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin\pdftoppm.exe"
     ]
     
     for p in paths:
