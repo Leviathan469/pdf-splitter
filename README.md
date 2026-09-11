@@ -4,14 +4,21 @@ Split large PDFs into smaller files wherever a RECEIVED stamp appears.
 
 ## Quick Start
 
-### Windows (Batch File)
+### Easy Install + Run (Windows)
 ```cmd
-split_pdf.bat "C:\path\to\your_document.pdf"
+run.bat
+```
+This automatically installs dependencies and starts the GUI.
+
+### Manual Install
+```bash
+pip install -r requirements.txt
+python split_pdf_gui.py
 ```
 
-### Any OS (Python)
+### Command Line (No GUI)
 ```bash
-python split_pdf.py "document.pdf" --template Stamp_NoDate.png --output-dir output_folder
+python split_pdf.py "document.pdf" --template stamp_template.png --output-dir output
 ```
 
 ## What It Does
