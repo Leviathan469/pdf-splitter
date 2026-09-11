@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 """
-Optimized PDF Splitter - faster without losing accuracy.
-
-Key optimizations:
-1. Pre-filter: Quick red ink check rejects non-stamp pages early
-2. Reduced scale range: Only search near 1.0 (where real stamps match)
-3. Grayscale matching: Already using, but ensured
-4. Skip obvious non-stamps: If no red ink in upper-left, skip template matching
+PDF Splitter - Position-agnostic version.
+Stamps can appear anywhere on the page, not just upper-left.
 """
 import argparse
 import cv2
@@ -66,18 +61,12 @@ def find_pdftoppm():
     return None
 
 
-def quick_precheck(page_img):
+def has_red_ink(page_img):
     """
-    Fast pre-check: does this page have red ink in the upper-left?
-    Returns True if page might have a stamp, False if definitely not.
+    Quick pre-check: does this page have any red ink anywhere?
+    Stamps have red dates, so this is a fast way to skip blank pages.
     """
-    h, w = page_img.shape[:2]
-    
-    # Only check upper-left quadrant (where stamps are)
-    upper_left = page_img[0:int(h*0.4), 0:int(w*0.6)]
-    
-    # Convert to HSV for color detection
-    hsv = cv2.cvtColor(upper_left, cv2.COLOR_BGR2HSV)
+    hsv = cv2.cvtColor(page_img, cv2.COLOR_BGR2HSV)
     
     # Red color range in HSV
     lower_red1 = np.array([0, 100, 100])
@@ -92,27 +81,27 @@ def quick_precheck(page_img):
     # Count red pixels
     red_pixels = np.sum(red_mask > 0)
     
-    # Need at least some red pixels to be a stamp page
-    return red_pixels > 50  # Very low threshold, just to skip blank pages
+    return red_pixels > 50  # Very low threshold
 
 
 def detect_stamp(page_img, template, threshold=0.35):
     """
     Detect if stamp exists in page image using template matching.
+    Searches the entire page - stamp can be anywhere.
     
     Key insight: real stamps match at scale ~1.0, false positives at wrong scales.
     We boost confidence for matches near scale=1.0 and penalize others.
     
     Returns: (found, confidence, scale)
     """
+    # Quick pre-check first
+    if not has_red_ink(page_img):
+        return False, 0.0, 0.0
+    
     page_gray = cv2.cvtColor(page_img, cv2.COLOR_BGR2GRAY)
     template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     
-    # Quick pre-check first
-    if not quick_precheck(page_img):
-        return False, 0.0, 0.0
-    
-    # Search scales from 0.7 to 1.3 (narrower range, real stamps are ~1.0)
+    # Search scales from 0.7 to 1.3
     scales = np.arange(0.7, 1.35, 0.05)
     
     best_confidence = 0
@@ -163,7 +152,6 @@ def split_pdf_by_stamps(pdf_path, template, threshold=0.35, dpi=300, work_dir=No
     
     print(f"\nDetecting stamps on {len(pages)} pages...")
     stamp_pages = []
-    precheck_passed = 0
     
     for i, page_path in enumerate(pages):
         page_img = cv2.imread(str(page_path))
