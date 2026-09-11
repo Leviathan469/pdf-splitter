@@ -1,0 +1,16 @@
+Extracting pages from Test_PDF.pdf...
+  Extracted 177 pages
+
+Detecting stamps on 177 pages...
+  Page   1 (page-001.png                  ): ✓ STAMP  (conf=1.00, scale=1.70)
+  Page   2 (page-002.png                  ): ✓ STAMP  (conf=0.68, scale=0.90)
+  Page   3 (page-003.png                  ): ✓ STAMP  (conf=0.60, scale=1.50)
+  Page   4 (page-004.png                  ): ✓ STAMP  (conf=0.74, scale=1.60)
+  Page   5 (page-005.png                  ): ✓ STAMP  (conf=0.56, scale=0.70)
+  Page   6 (page-006.png                  ): ✓ STAMP  (conf=0.94, scale=1.50)
+  Page   7 (page-007.png                  ): ✓ STAMP  (conf=0.54, scale=0.30)
+  Page   8 (page-008.png                  ): ✓ STAMP  (conf=0.68, scale=0.90)
+  Page   9 (page-009.png                  ): ✓ STAMP  (conf=1.00, scale=1.60)
+  Page  10 (page-010.png                  ): ✓ STAMP  (conf=0.83, scale=1.40)
+  Page  11 (page-011.png                  ): ✓ STAMP  (conf=0.65, scale=1.60)
+  Page  12 (page-012.png                  ): ✓ STAMP  (conf=0.60, scale=1.50)
