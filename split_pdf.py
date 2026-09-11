@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
 """
-PDF Splitter - Splits a large PDF into smaller ones based on RECEIVED stamp detection.
-
-Usage:
-    python split_pdf.py input.pdf --template Stamp_NoDate.png --output-dir split_output
-
-Requires:
-    - OpenCV (cv2): pip install opencv-python
-    - pypdf: pip install pypdf
-    - Poppler (pdftoppm): for PDF to PNG conversion
-    - Python 3.7+
+PDF Splitter - Updated to use scale information for better accuracy.
+Key insight: real stamps match at scale=1.0, false positives at wrong scales.
 """
 import argparse
 import cv2
@@ -55,7 +47,9 @@ def find_pdftoppm():
     """Find pdftoppm executable."""
     paths = [
         "pdftoppm",
-        r"C:\Users\acollazo\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin\pdftoppm.exe"
+        r"C:\Program Files\poppler-24.07.0\Library\bin\pdftoppm.exe",
+        r"C:\Program Files\poppler-25.07.0\Library\bin\pdftoppm.exe",
+        r"C:\Users\aiden\AppData\Local\Microsoft\WinGet\Packages\oschwartz10612.Poppler_Microsoft.Winget.Source_8wekyb3d8bbwe\poppler-25.07.0\Library\bin\pdftoppm.exe",
     ]
     
     for p in paths:
@@ -69,15 +63,20 @@ def find_pdftoppm():
     return None
 
 
-def detect_stamp(page_img, template, threshold=0.4):
+def detect_stamp(page_img, template, threshold=0.35):
     """
     Detect if stamp exists in page image using template matching.
-    Returns (found, confidence, scale).
+    
+    Key insight: real stamps match at scale ~1.0, false positives at wrong scales.
+    We boost confidence for matches near scale=1.0 and penalize others.
+    
+    Returns: (found, confidence, scale)
     """
     page_gray = cv2.cvtColor(page_img, cv2.COLOR_BGR2GRAY)
     template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     
-    scales = np.arange(0.2, 2.1, 0.05)
+    # Search scales from 0.5 to 1.5 (stamps shouldn't be much bigger/smaller)
+    scales = np.arange(0.5, 1.55, 0.05)
     
     best_confidence = 0
     best_scale = 0
@@ -96,14 +95,29 @@ def detect_stamp(page_img, template, threshold=0.4):
             best_confidence = max_val
             best_scale = scale
     
-    found = best_confidence >= threshold
-    return found, best_confidence, best_scale
+    # Apply scale-based confidence adjustment
+    # Real stamps match at scale ~1.0
+    # False positives match at weird scales
+    
+    scale_penalty = abs(best_scale - 1.0)  # How far from 1.0?
+    
+    if scale_penalty < 0.15:  # Within 15% of expected size
+        # Boost confidence for good scale match
+        adjusted_confidence = best_confidence * 1.2
+    elif scale_penalty < 0.3:
+        # Slight penalty
+        adjusted_confidence = best_confidence
+    else:
+        # Heavy penalty for bad scale
+        adjusted_confidence = best_confidence * 0.7
+    
+    found = adjusted_confidence >= threshold
+    return found, adjusted_confidence, best_scale
 
 
-def split_pdf_by_stamps(pdf_path, template, threshold=0.4, dpi=300, work_dir=None):
+def split_pdf_by_stamps(pdf_path, template, threshold=0.35, dpi=300, work_dir=None):
     """
     Split PDF into multiple PDFs based on stamp detection.
-    Returns list of page ranges for each output PDF.
     """
     pdf_path = Path(pdf_path)
     
@@ -186,7 +200,7 @@ def main():
     parser = argparse.ArgumentParser(description="Split PDF by RECEIVED stamp detection")
     parser.add_argument("pdf", help="Input PDF file path")
     parser.add_argument("--template", required=True, help="Stamp template image path")
-    parser.add_argument("--threshold", type=float, default=0.4, help="Detection threshold (0-1)")
+    parser.add_argument("--threshold", type=float, default=0.35, help="Detection threshold (0-1)")
     parser.add_argument("--dpi", type=int, default=300, help="DPI for PDF rendering")
     parser.add_argument("--output-dir", required=True, help="Output directory for split PDFs")
     
