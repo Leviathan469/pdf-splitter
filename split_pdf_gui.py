@@ -26,6 +26,28 @@ class PDFSplitterGUI:
         self.root.geometry("600x500")
         self.root.resizable(True, True)
         
+        # Purple theme
+        self.root.configure(bg="#2d1b4e")
+        style = ttk.Style()
+        style.theme_use("clam")
+        
+        # Colors
+        bg_color = "#2d1b4e"
+        fg_color = "#e0d0ff"
+        accent_color = "#7c3aed"
+        entry_bg = "#1a0f2e"
+        
+        style.configure("TFrame", background=bg_color)
+        style.configure("TLabel", background=bg_color, foreground=fg_color, font=("Arial", 10))
+        style.configure("TButton", background=accent_color, foreground="white", font=("Arial", 10, "bold"))
+        style.map("TButton", background=[("active", "#6d28d9")])
+        style.configure("TEntry", fieldbackground=entry_bg, foreground="white", insertcolor="white")
+        style.configure("TProgressbar", troughcolor=entry_bg, background=accent_color)
+        style.configure("TScale", troughcolor=entry_bg, background=accent_color)
+        style.configure("TCombobox", fieldbackground=entry_bg, foreground="white", background=accent_color)
+        style.configure("TLabelframe", background=bg_color, foreground=fg_color)
+        style.configure("TLabelframe.Label", background=bg_color, foreground=fg_color)
+        
         # Variables
         self.pdf_path = tk.StringVar()
         self.template_path = tk.StringVar(value=str(Path(__file__).parent / "stamp_template.png"))
@@ -103,7 +125,9 @@ class PDFSplitterGUI:
         # Results
         ttk.Label(main_frame, text="Results:").grid(row=8, column=0, sticky="nw", pady=5)
         
-        self.results_text = tk.Text(main_frame, height=8, width=60, state="disabled", wrap="word")
+        self.results_text = tk.Text(main_frame, height=8, width=60, state="disabled", wrap="word",
+                                     bg="#1a0f2e", fg="#e0d0ff", insertbackground="white",
+                                     font=("Consolas", 9))
         self.results_text.grid(row=8, column=1, columnspan=2, sticky="nsew", pady=5)
         
         scrollbar = ttk.Scrollbar(main_frame, command=self.results_text.yview)
