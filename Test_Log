@@ -1,4 +1,3 @@
-Template loaded: (336, 526, 3)
 Extracting pages from Test_PDF.pdf...
   Extracted 177 pages
 
@@ -32,3 +31,9 @@ Detecting stamps on 177 pages...
   Page  27 (page-027.png                  ): ✗ None   (conf=0.32, scale=0.25)
   Page  28 (page-028.png                  ): ✗ None   (conf=0.34, scale=0.30)
   Page  29 (page-029.png                  ): ✗ None   (conf=0.30, scale=0.55)
+  Page  30 (page-030.png                  ): ✓ STAMP  (conf=0.50, scale=1.00)
+  Page  31 (page-031.png                  ): ✗ None   (conf=0.32, scale=0.25)
+  Page  32 (page-032.png                  ): ✗ None   (conf=0.35, scale=0.30)
+  Page  33 (page-033.png                  ): ✗ None   (conf=0.30, scale=0.20)
+  Page  34 (page-034.png                  ): ✓ STAMP  (conf=0.57, scale=1.00)
+  Page  35 (page-035.png                  ): ✗ None   (conf=0.32, scale=0.25)
