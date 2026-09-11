@@ -4,99 +4,104 @@ Split large PDFs into smaller files wherever a RECEIVED stamp appears.
 
 ## Quick Start
 
-### Option 1: Windows Batch File (Easiest)
+### Windows (Batch File)
 ```cmd
-split_pdf.bat "C:\path\to\your\scanned_document.pdf"
+split_pdf.bat "C:\path\to\your_document.pdf"
 ```
 
-### Option 2: Python Script
+### Any OS (Python)
 ```bash
-python split_pdf.py "input.pdf" --template stamp_template.png --output-dir "output_folder"
+python split_pdf.py "document.pdf" --template stamp_template.png --output-dir output_folder
 ```
 
-### Option 3: Custom Threshold
-```cmd
-split_pdf.bat "input.pdf" 0.6
-```
+## What It Does
 
-## How It Works
+1. **Converts** each PDF page to an image
+2. **Scans** for the RECEIVED stamp using template matching
+3. **Splits** the PDF at each stamp location
+4. **Outputs** separate PDFs: `document_part001.pdf`, `document_part002.pdf`, etc.
 
-1. **Extracts** each page of the PDF as a PNG image
-2. **Scans** each page for the RECEIVED stamp using OpenCV template matching
-3. **Identifies** pages where the stamp appears (confidence > threshold)
-4. **Splits** the PDF at each stamp location into separate files
-
-**No OCR needed for detection** — uses computer vision template matching for reliable detection.
-
-## Usage Examples
+## Requirements
 
 ```bash
-# Basic usage
-python split_pdf.py document.pdf --template stamp_template.png --output-dir split_output
+pip install opencv-python numpy pypdf
+```
 
-# With custom threshold (lower = more sensitive, higher = stricter)
-python split_pdf.py document.pdf --template stamp_template.png --threshold 0.5 --output-dir split_output
+**Plus Poppler** (for PDF rendering):
 
-# Higher DPI for better detection on high-res scans
-python split_pdf.py document.pdf --template stamp_template.png --dpi 300 --output-dir split_output
+| OS | Command |
+|----|---------|
+| Windows | `winget install oschwartz10612.Poppler` |
+| macOS | `brew install poppler` |
+| Linux | `apt-get install poppler-utils` |
+
+## Usage
+
+### Basic
+```bash
+python split_pdf.py input.pdf --template stamp_template.png --output-dir split_output
+```
+
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--template` | required | Path to stamp template image |
+| `--output-dir` | required | Directory for split PDFs |
+| `--threshold` | 0.5 | Detection sensitivity (0.0-1.0) |
+| `--dpi` | 300 | DPI for PDF rendering |
+
+### Examples
+```bash
+# More sensitive detection (catches faint stamps)
+python split_pdf.py doc.pdf --template stamp.png --output-dir out --threshold 0.4
+
+# Stricter detection (fewer false positives)
+python split_pdf.py doc.pdf --template stamp.png --output-dir out --threshold 0.7
+
+# Lower DPI for faster processing
+python split_pdf.py doc.pdf --template stamp.png --output-dir out --dpi 200
 ```
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `split_pdf.py` | Main PDF splitting script |
-| `split_pdf.bat` | Windows batch file for easy usage |
-| `stamp_template.png` | Your stamp template (RECEIVED with date) |
+| `split_pdf.py` | Main script |
+| `split_pdf.bat` | Windows batch wrapper |
+| `stamp_template.png` | Your stamp template |
+| `stamp_template.pdf` | Template source (for editing) |
 
-## Dependencies
+## Using Your Own Stamp
 
-```bash
-pip install opencv-python numpy pypdf
-```
+1. Scan a clear impression of your stamp (300+ DPI)
+2. Crop to include just the stamp
+3. Save as `stamp_template.png`
+4. Use `--template your_stamp.png`
 
-Plus:
-- [Poppler](https://github.com/oschwartz10612/poppler-windows) (for PDF to PNG conversion)
-  - On Windows: `winget install oschwartz10612.Poppler`
+## How Detection Works
 
-## How to Use Your Own Stamp
+Uses **OpenCV template matching**:
+- Compares the stamp template against each page
+- Tries multiple scales (0.3x to 2.0x) for size variation
+- Returns confidence score (0.0 = no match, 1.0 = perfect match)
+- Pages with confidence ≥ threshold are marked as "stamp found"
 
-1. Scan a document with a clear stamp
-2. Open the scan in Paint or similar
-3. Crop just the stamp region
-4. Save as `stamp_template.png`
-5. Run the splitter with your custom template
+## Performance
 
-## Training OCR for RECEIVED Text (Optional)
+| Document Size | Pages | Time |
+|--------------|-------|------|
+| 45-page scan | 45 | ~30 seconds |
+| 100-page scan | 100 | ~1 minute |
 
-If you also need to READ the stamp text (dates, initials), see the training scripts:
+*Based on 300 DPI scans, depending on CPU speed*
 
-| Script | Purpose |
-|--------|---------|
-| `train_stamp_with_tesstrain.py` | Docker-based training with tesstrain |
+## Troubleshoot
 
-### Why Training is Difficult on Windows
-
-Tesseract v5 produces corrupted `.lstmf` files on Windows. The solution is Docker:
-
-```powershell
-cd C:\Users\aiden\tesstrain
-docker run --rm -v "${PWD}:/tesstrain" tesstrain bash -c "cd /tesstrain && make training MODEL_NAME=received-stamp TESSDATA=/tesstrain/usr/share/tessdata_best TESSDATA_REPO=_best MAX_ITERATIONS=1000"
-```
-
-## Results
-
-Tested on sample documents:
-- **Confidence**: 0.97-1.00 (excellent detection)
-- **Speed**: ~1 second per page
-- **Output**: `document_part001.pdf`, `document_part002.pdf`, etc.
-
-## For Your Work PC
-
-Set environment variables if Tesseract/Poppler are in non-standard paths:
-
-```cmd
-set TESSERACT_CMD=C:\Path\To\Tesseract-OCR\tesseract.exe
-set POPPLER_PATH=C:\Path\To\poppler\Library\bin
-python split_pdf.py your_file.pdf --template stamp_template.png --output-dir output
-```
+| Problem | Solution |
+|---------|----------|
+| Stamp not detected | Lower threshold: `--threshold 0.4` |
+| False positives | Raise threshold: `--threshold 0.7` |
+| Wrong pages split | Try a better/cleaner stamp template |
+| Slow processing | Lower DPI: `--dpi 200` |
+| Poppler not found | Install via winget/brew/apt |
