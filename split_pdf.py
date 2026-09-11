@@ -206,7 +206,7 @@ def main():
     parser = argparse.ArgumentParser(description="Split PDF by RECEIVED stamp detection")
     parser.add_argument("pdf", help="Input PDF file path")
     parser.add_argument("--template", required=True, help="Stamp template image path")
-    parser.add_argument("--threshold", type=float, default=0.35, help="Detection threshold (0-1)")
+    parser.add_argument("--threshold", type=float, default=0.30, help="Detection threshold (0-1)")
     parser.add_argument("--dpi", type=int, default=300, help="DPI for PDF rendering")
     parser.add_argument("--output-dir", required=True, help="Output directory for split PDFs")
     
