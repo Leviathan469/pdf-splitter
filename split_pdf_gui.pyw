@@ -11,6 +11,7 @@ import subprocess
 
 import cv2
 import numpy as np
+import tkinter as tk
 import tkinterdnd2
 from tkinter import ttk, filedialog, messagebox
 
@@ -173,52 +174,43 @@ class PDFSplitterGUI:
         self.setup_drag_drop()
     
     def setup_drag_drop(self):
-        """Enable drag-and-drop for PDF and Template fields."""
-        # Register drop targets
-        for widget, var in [
-            (self.pdf_path, self.pdf_path),
-            (self.template_path, self.template_path),
-        ]:
-            entry = self.root.nametowidget(widget._w)
-            # Actually get the entry widget by its variable's trace
-        # Better: find the entry widgets directly
-        # The entries are the children of main_frame with textvariable bound
+        """Enable drag-and-drop for PDF and Template fields, and the whole window."""
+        # Register the whole window as a drop target (auto-detect file type)
+        self.root.drop_target_register(tkinterdnd2.DND_FILES)
+        self.root.dnd_bind("<<Drop>>", self.on_window_drop)
         
-        # Simpler: register the whole window as a drop target
-        self.root.drop_target_register("DND_Files")
-        self.root.dnd_bind("<<Drop>>", self.on_drop)
-        
-        # Also register specific entry widgets for visual feedback
-        # We need to find the entry widgets - they're the ones with our textvariables
+        # Register specific entry widgets for direct drops
         main_frame = self.root.winfo_children()[0]  # ttk.Frame
-        for child in main_frame.winfo_children():
-            if isinstance(child, ttk.Entry):
-                child.drop_target_register("DND_Files")
-                child.dnd_bind("<<Drop>>", self.on_entry_drop)
-                child.dnd_bind("<<DragEnter>>", self.on_drag_enter)
-                child.dnd_bind("<<DragLeave>>", self.on_drag_leave)
+        entries = [c for c in main_frame.winfo_children() if isinstance(c, ttk.Entry)]
+        if len(entries) >= 2:
+            self._pdf_entry = entries[0]
+            self._template_entry = entries[1]
+            for entry in entries:
+                entry.drop_target_register(tkinterdnd2.DND_FILES)
+                entry.dnd_bind("<<Drop>>", self.on_entry_drop)
+                entry.dnd_bind("<<DragEnter>>", self.on_drag_enter)
+                entry.dnd_bind("<<DragLeave>>", self.on_drag_leave)
     
-    def on_drop(self, event):
-        """Handle files dropped anywhere on the window."""
+    def on_window_drop(self, event):
+        """Handle files dropped anywhere on the window (auto-detect type)."""
         paths = _parse_drop_paths(event.data)
         if not paths:
             return
         
-        # First PDF -> PDF path, everything else -> template (first image found)
+        # First PDF -> PDF path, first image -> template
         for p in paths:
             ext = Path(p).suffix.lower()
             if ext == ".pdf" and not self.pdf_path.get():
-                self.pdf_path.set(p)
+                self.pdf_path.set(str(Path(p)))
                 self.status_label.config(text=f"PDF loaded: {Path(p).name}")
-                break
-        else:
-            # No PDF found, but maybe an image for template
-            for p in paths:
-                ext = Path(p).suffix.lower()
-                if ext in (".png", ".jpg", ".jpeg"):
-                    self.template_path.set(p)
-                    self.status_label.config(text=f"Template loaded: {Path(p).name}")
-                    break
+                return
+        
+        for p in paths:
+            ext = Path(p).suffix.lower()
+            if ext in (".png", ".jpg", ".jpeg"):
+                self.template_path.set(str(Path(p)))
+                self.status_label.config(text=f"Template loaded: {Path(p).name}")
+                return
     
     def on_entry_drop(self, event):
         """Handle files dropped on a specific entry widget."""
@@ -226,49 +218,25 @@ class PDFSplitterGUI:
         if not paths:
             return
         
-        # Find which entry widget received the drop
         widget = event.widget
         
-        # Match the widget to our textvariable
-        # We can check which entry has focus, but simpler: use the widget itself
-        # The entries were created with textvariable=self.pdf_path or self.template_path
-        # We need to figure out which one this is
-        
-        # Use a dictionary to map widget -> variable
-        if not hasattr(self, '_entry_var_map'):
-            self._entry_var_map = {}
-        
-        var = self._entry_var_map.get(widget)
-        
-        # First time setup
-        if var is None:
-            # Find the variable for this widget
-            main_frame = self.root.winfo_children()[0]
-            entries = [c for c in main_frame.winfo_children() if isinstance(c, ttk.Entry)]
-            if len(entries) >= 2:
-                self._entry_var_map = {entries[0]: self.pdf_path, entries[1]: self.template_path}
-                var = self._entry_var_map.get(widget)
-        
-        if var is None:
-            return
-        
-        # Validate file type
+        # First file that matches the expected type
         for p in paths:
             ext = Path(p).suffix.lower()
-            if var == self.pdf_path:
-                if ext == ".pdf":
-                    var.set(p)
-                    self.status_label.config(text=f"PDF loaded: {Path(p).name}")
-                    break
-                else:
-                    self.status_label.config(text="Please drop a PDF file here")
-            else:  # template
-                if ext in (".png", ".jpg", ".jpeg"):
-                    var.set(p)
-                    self.status_label.config(text=f"Template loaded: {Path(p).name}")
-                    break
-                else:
-                    self.status_label.config(text="Please drop an image file here")
+            if widget == self._pdf_entry and ext == ".pdf":
+                self.pdf_path.set(str(Path(p)))
+                self.status_label.config(text=f"PDF loaded: {Path(p).name}")
+                return
+            elif widget == self._template_entry and ext in (".png", ".jpg", ".jpeg"):
+                self.template_path.set(str(Path(p)))
+                self.status_label.config(text=f"Template loaded: {Path(p).name}")
+                return
+        
+        # No valid file found
+        if widget == self._pdf_entry:
+            self.status_label.config(text="Please drop a PDF file here")
+        else:
+            self.status_label.config(text="Please drop an image file here")
     
     def on_drag_enter(self, event):
         """Visual feedback when dragging over an entry."""
