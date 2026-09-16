@@ -23,7 +23,7 @@ class PDFSplitterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("PDF Stamp Splitter")
-        self.root.geometry("600x500")
+        self.root.geometry("600x520")
         self.root.resizable(True, True)
         
         # Purple theme
@@ -135,6 +135,10 @@ class PDFSplitterGUI:
         self.results_text.config(yscrollcommand=scrollbar.set)
         
         main_frame.rowconfigure(8, weight=1)
+        
+        # Credit line - by Aiden
+        credit_label = ttk.Label(main_frame, text="- by Aiden", font=("Arial", 8, "italic"))
+        credit_label.grid(row=9, column=0, columnspan=3, pady=(10, 0))
     
     def browse_pdf(self):
         filename = filedialog.askopenfilename(
@@ -303,7 +307,7 @@ class PDFSplitterGUI:
             str(pdftoppm), "-png", "-r", str(dpi),
             str(pdf_path),
             str(output_dir / "page")
-        ], capture_output=True, text=True)
+        ], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
         
         if result.returncode != 0:
             raise ValueError(f"pdftoppm failed: {result.stderr}")
@@ -322,7 +326,8 @@ class PDFSplitterGUI:
         
         for p in paths:
             try:
-                result = subprocess.run([p, "-v"], capture_output=True, text=True)
+                result = subprocess.run([p, "-v"], capture_output=True, text=True,
+                                        creationflags=subprocess.CREATE_NO_WINDOW)
                 if result.returncode == 0 or "pdftoppm" in result.stderr:
                     return p
             except FileNotFoundError:
@@ -368,6 +373,12 @@ class PDFSplitterGUI:
             if max_val > best_confidence:
                 best_confidence = max_val
                 best_scale = scale
+        
+        # --- NEW: Hard size filter ---
+        # Reject matches where the best scale is far from 1.0 (template size).
+        # This eliminates false positives like the UHC Optum orange logo (scale=0.80).
+        if best_scale < 0.95 or best_scale > 1.05:
+            return False, 0.0, best_scale
         
         scale_penalty = abs(best_scale - 1.0)
         

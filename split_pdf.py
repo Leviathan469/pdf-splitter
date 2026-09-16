@@ -16,6 +16,13 @@ except ImportError:
     sys.exit(1)
 
 
+# Windows-only flag to suppress console popup in subprocesses
+try:
+    CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+except AttributeError:
+    CREATE_NO_WINDOW = 0
+
+
 def extract_pages(pdf_path, output_dir, dpi=300):
     """Convert PDF pages to images using pdftoppm."""
     output_dir = Path(output_dir)
@@ -37,7 +44,7 @@ def extract_pages(pdf_path, output_dir, dpi=300):
         str(pdftoppm), "-png", "-r", str(dpi),
         str(pdf_path),
         str(output_dir / "page")
-    ], capture_output=True, text=True)
+    ], capture_output=True, text=True, creationflags=CREATE_NO_WINDOW)
     
     if result.returncode != 0:
         print(f"ERROR: pdftoppm failed: {result.stderr}")
@@ -57,7 +64,8 @@ def find_pdftoppm():
     
     for p in paths:
         try:
-            result = subprocess.run([p, "-v"], capture_output=True, text=True)
+            result = subprocess.run([p, "-v"], capture_output=True, text=True,
+                                    creationflags=CREATE_NO_WINDOW)
             if result.returncode == 0 or "pdftoppm" in result.stderr:
                 return p
         except FileNotFoundError:
@@ -109,6 +117,11 @@ def detect_stamp(page_img, template, threshold=0.35):
         if max_val > best_confidence:
             best_confidence = max_val
             best_scale = scale
+    
+    # Hard size filter: reject matches where best_scale is far from 1.0
+    # This kills false positives like the UHC Optum orange logo (scale=0.80)
+    if best_scale < 0.95 or best_scale > 1.05:
+        return False, 0.0, best_scale
     
     scale_penalty = abs(best_scale - 1.0)
     
