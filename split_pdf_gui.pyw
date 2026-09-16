@@ -23,30 +23,34 @@ class PDFSplitterGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("PDF Stamp Splitter")
-        self.root.geometry("600x520")
+        self.root.geometry("620x560")
         self.root.resizable(True, True)
         
-        # Purple theme
-        self.root.configure(bg="#2d1b4e")
+        # Purple theme — slightly refined palette
+        self.root.configure(bg="#1e1333")
         style = ttk.Style()
         style.theme_use("clam")
         
         # Colors
-        bg_color = "#2d1b4e"
-        fg_color = "#e0d0ff"
-        accent_color = "#7c3aed"
-        entry_bg = "#1a0f2e"
+        self.bg_color = "#1e1333"
+        self.panel_bg = "#281a45"
+        self.fg_color = "#e8d5ff"
+        self.accent = "#8b5cf6"
+        self.accent_hover = "#7c3aed"
+        self.accent2 = "#c084fc"  # lighter purple for glow
+        self.entry_bg = "#150d28"
+        self.success = "#34d399"
         
-        style.configure("TFrame", background=bg_color)
-        style.configure("TLabel", background=bg_color, foreground=fg_color, font=("Arial", 10))
-        style.configure("TButton", background=accent_color, foreground="white", font=("Arial", 10, "bold"))
-        style.map("TButton", background=[("active", "#6d28d9")])
-        style.configure("TEntry", fieldbackground=entry_bg, foreground="white", insertcolor="white")
-        style.configure("TProgressbar", troughcolor=entry_bg, background=accent_color)
-        style.configure("TScale", troughcolor=entry_bg, background=accent_color)
-        style.configure("TCombobox", fieldbackground=entry_bg, foreground="white", background=accent_color)
-        style.configure("TLabelframe", background=bg_color, foreground=fg_color)
-        style.configure("TLabelframe.Label", background=bg_color, foreground=fg_color)
+        style.configure("TFrame", background=self.bg_color)
+        style.configure("TLabel", background=self.bg_color, foreground=self.fg_color, font=("Arial", 10))
+        style.configure("TButton", background=self.accent, foreground="white", font=("Arial", 10, "bold"))
+        style.map("TButton", background=[("active", self.accent_hover)])
+        style.configure("TEntry", fieldbackground=self.entry_bg, foreground="white", insertcolor="white")
+        style.configure("TProgressbar", troughcolor=self.entry_bg, background=self.accent)
+        style.configure("TScale", troughcolor=self.entry_bg, background=self.accent)
+        style.configure("TCombobox", fieldbackground=self.entry_bg, foreground="white", background=self.accent)
+        style.configure("TLabelframe", background=self.bg_color, foreground=self.fg_color)
+        style.configure("TLabelframe.Label", background=self.bg_color, foreground=self.fg_color)
         
         # Variables
         self.pdf_path = tk.StringVar()
@@ -66,9 +70,10 @@ class PDFSplitterGUI:
         self.root.rowconfigure(0, weight=1)
         main_frame.columnconfigure(1, weight=1)
         
-        # Title
-        title_label = ttk.Label(main_frame, text="PDF Stamp Splitter", font=("Arial", 16, "bold"))
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 15))
+        # === Canvas-drawn logo banner ===
+        self.logo_canvas = tk.Canvas(main_frame, height=60, bg=self.bg_color, highlightthickness=0)
+        self.logo_canvas.grid(row=0, column=0, columnspan=3, pady=(0, 12), sticky="ew")
+        self.draw_logo()
         
         # PDF File
         ttk.Label(main_frame, text="PDF File:").grid(row=1, column=0, sticky="w", pady=5)
@@ -104,14 +109,15 @@ class PDFSplitterGUI:
         dpi_frame.grid(row=4, column=1, sticky="ew", padx=5)
         
         self.dpi_combo = ttk.Combobox(dpi_frame, textvariable=self.dpi, values=[150, 200, 300], width=10, state="readonly")
-        self.dpi_combo.current(2)  # Default 300
+        self.dpi_combo.current(2)
         self.dpi_combo.grid(row=0, column=0, sticky="w")
         
         ttk.Label(dpi_frame, text="(Higher = slower but more accurate)").grid(row=0, column=1, padx=(10, 0))
         
-        # Run Button
-        self.run_button = ttk.Button(main_frame, text="Split PDF", command=self.run_split)
-        self.run_button.grid(row=5, column=0, columnspan=3, pady=15)
+        # === Run Button with custom Canvas glow ===
+        self.button_canvas = tk.Canvas(main_frame, height=42, bg=self.bg_color, highlightthickness=0)
+        self.button_canvas.grid(row=5, column=0, columnspan=3, pady=15)
+        self.draw_run_button()
         
         # Progress
         ttk.Label(main_frame, text="Progress:").grid(row=6, column=0, sticky="w")
@@ -126,8 +132,8 @@ class PDFSplitterGUI:
         ttk.Label(main_frame, text="Results:").grid(row=8, column=0, sticky="nw", pady=5)
         
         self.results_text = tk.Text(main_frame, height=8, width=60, state="disabled", wrap="word",
-                                     bg="#1a0f2e", fg="#e0d0ff", insertbackground="white",
-                                     font=("Consolas", 9))
+                                     bg=self.entry_bg, fg=self.fg_color, insertbackground="white",
+                                     font=("Consolas", 9), relief="flat", padx=8, pady=6)
         self.results_text.grid(row=8, column=1, columnspan=2, sticky="nsew", pady=5)
         
         scrollbar = ttk.Scrollbar(main_frame, command=self.results_text.yview)
@@ -136,9 +142,79 @@ class PDFSplitterGUI:
         
         main_frame.rowconfigure(8, weight=1)
         
-        # Credit line - by Aiden
-        credit_label = ttk.Label(main_frame, text="- by Aiden", font=("Arial", 8, "italic"))
+        # Credit line
+        credit_label = ttk.Label(main_frame, text="✦ by Aiden", font=("Arial", 8, "italic"), foreground=self.accent2)
         credit_label.grid(row=9, column=0, columnspan=3, pady=(10, 0))
+        
+        # Bind resize to redraw logo
+        self.logo_canvas.bind("<Configure>", lambda e: self.draw_logo())
+        self.button_canvas.bind("<Configure>", lambda e: self.draw_run_button())
+    
+    def draw_logo(self):
+        """Draw a stylized stamp-seal logo with glow effect."""
+        c = self.logo_canvas
+        c.delete("all")
+        w = c.winfo_width() or 600
+        
+        # Glow circle behind the seal
+        cx, cy = w // 2, 30
+        r = 18
+        for i in range(6, 0, -1):
+            c.create_oval(cx-r-i*2, cy-r-i*2, cx+r+i*2, cy+r+i*2,
+                          fill="", outline="#8b5cf6", width=1, stipple="gray50")
+        
+        # Main seal circle
+        c.create_oval(cx-r, cy-r, cx+r, cy+r, fill="#2d1b4e", outline=self.accent, width=2)
+        
+        # Inner text: "S" for splitter
+        c.create_text(cx, cy, text="S", font=("Arial", 18, "bold"), fill=self.accent2)
+        
+        # Title text to the right of seal
+        c.create_text(cx + 40, cy, text="PDF Stamp Splitter", font=("Arial", 16, "bold"),
+                      fill=self.fg_color, anchor="w")
+        
+        # Subtle separator line below
+        c.create_line(10, 56, w-10, 56, fill=self.accent, width=1, stipple="gray25")
+    
+    def draw_run_button(self):
+        """Draw a custom glowing button with hover support."""
+        c = self.button_canvas
+        c.delete("all")
+        w = c.winfo_width() or 200
+        h = 38
+        btn_w = 160
+        btn_h = 34
+        x = (w - btn_w) // 2
+        y = (h - btn_h) // 2
+        r = 8  # corner radius
+        
+        # Glow ring
+        for i in range(5, 0, -1):
+            c.create_arc(x-i, y-i, x+r+i, y+r+i, start=90, extent=90, style="arc",
+                         outline=self.accent, width=1, stipple="gray75")
+            c.create_arc(x+btn_w-r-i, y-i, x+btn_w+i, y+r+i, start=0, extent=90, style="arc",
+                         outline=self.accent, width=1, stipple="gray75")
+            c.create_arc(x-i, y+btn_h-r-i, x+r+i, y+btn_h+i, start=180, extent=90, style="arc",
+                         outline=self.accent, width=1, stipple="gray75")
+            c.create_arc(x+btn_w-r-i, y+btn_h-r-i, x+btn_w+i, y+btn_h+i, start=270, extent=90, style="arc",
+                         outline=self.accent, width=1, stipple="gray75")
+        
+        # Button rounded rect (using rounded-rect trick)
+        c.create_polygon(
+            x+r, y, x+btn_w-r, y, x+btn_w, y, x+btn_w, y+r,
+            x+btn_w, y+btn_h-r, x+btn_w, y+btn_h, x+btn_w-r, y+btn_h,
+            x+r, y+btn_h, x, y+btn_h, x, y+btn_h-r,
+            x, y+r, x, y, x+r, y,
+            fill=self.accent, outline=self.accent2, width=2, smooth=True
+        )
+        
+        # Button text
+        c.create_text(w//2, h//2, text="▶  Split PDF", font=("Arial", 11, "bold"), fill="white")
+        
+        # Click binding
+        c.bind("<Button-1>", lambda e: self.run_split())
+        c.bind("<Enter>", lambda e: c.config(cursor="hand2"))
+        c.bind("<Leave>", lambda e: c.config(cursor=""))
     
     def browse_pdf(self):
         filename = filedialog.askopenfilename(
@@ -190,7 +266,11 @@ class PDFSplitterGUI:
             return
         
         self.running = True
-        self.run_button.config(state="disabled")
+        self.button_canvas.delete("all")
+        w = self.button_canvas.winfo_width() or 200
+        h = 38
+        self.button_canvas.create_text(w//2, h//2, text="Working...", font=("Arial", 11, "bold"), fill=self.accent)
+        
         self.results_text.config(state="normal")
         self.results_text.delete("1.0", "end")
         self.results_text.config(state="disabled")
@@ -287,7 +367,7 @@ class PDFSplitterGUI:
         
         finally:
             self.running = False
-            self.run_button.config(state="normal")
+            self.draw_run_button()
     
     def extract_pages(self, pdf_path, output_dir, dpi=300):
         """Convert PDF pages to images using pdftoppm."""
@@ -374,9 +454,7 @@ class PDFSplitterGUI:
                 best_confidence = max_val
                 best_scale = scale
         
-        # --- NEW: Hard size filter ---
-        # Reject matches where the best scale is far from 1.0 (template size).
-        # This eliminates false positives like the UHC Optum orange logo (scale=0.80).
+        # Hard size filter: reject matches outside 0.95-1.05
         if best_scale < 0.95 or best_scale > 1.05:
             return False, 0.0, best_scale
         
