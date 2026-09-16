@@ -3,20 +3,39 @@
 PDF Stamp Splitter - GUI Version
 User-friendly interface for splitting PDFs by stamp detection.
 """
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-import cv2
-import numpy as np
-import subprocess
 import sys
 import threading
+import shutil
 from pathlib import Path
+import subprocess
+
+import cv2
+import numpy as np
+import tkinterdnd2
+from tkinter import ttk, filedialog, messagebox
 
 try:
     from pypdf import PdfReader, PdfWriter
 except ImportError:
     print("ERROR: pypdf not installed. Run: pip install pypdf")
     sys.exit(1)
+
+
+# ── Drag-and-drop data format ──────────────────────────────────────────────
+# tkinterdnd2 returns file paths wrapped in braces if they contain spaces,
+# e.g. "{C:/Users/foo/My File.pdf}". Strip the braces when present.
+def _parse_drop_paths(data: str) -> list[str]:
+    """Parse the DND string into a clean list of file paths."""
+    if not data:
+        return []
+    # Split on '}{' and strip braces
+    raw = data.replace("}{", "").split("")
+    paths = []
+    for p in raw:
+        p = p.strip().strip("{}")
+        if p:
+            paths.append(p)
+    return paths
 
 
 class PDFSplitterGUI:
@@ -149,6 +168,115 @@ class PDFSplitterGUI:
         # Bind resize to redraw logo
         self.logo_canvas.bind("<Configure>", lambda e: self.draw_logo())
         self.button_canvas.bind("<Configure>", lambda e: self.draw_run_button())
+        
+        # ── Drag-and-drop setup ───────────────────────────────────────────────
+        self.setup_drag_drop()
+    
+    def setup_drag_drop(self):
+        """Enable drag-and-drop for PDF and Template fields."""
+        # Register drop targets
+        for widget, var in [
+            (self.pdf_path, self.pdf_path),
+            (self.template_path, self.template_path),
+        ]:
+            entry = self.root.nametowidget(widget._w)
+            # Actually get the entry widget by its variable's trace
+        # Better: find the entry widgets directly
+        # The entries are the children of main_frame with textvariable bound
+        
+        # Simpler: register the whole window as a drop target
+        self.root.drop_target_register("DND_Files")
+        self.root.dnd_bind("<<Drop>>", self.on_drop)
+        
+        # Also register specific entry widgets for visual feedback
+        # We need to find the entry widgets - they're the ones with our textvariables
+        main_frame = self.root.winfo_children()[0]  # ttk.Frame
+        for child in main_frame.winfo_children():
+            if isinstance(child, ttk.Entry):
+                child.drop_target_register("DND_Files")
+                child.dnd_bind("<<Drop>>", self.on_entry_drop)
+                child.dnd_bind("<<DragEnter>>", self.on_drag_enter)
+                child.dnd_bind("<<DragLeave>>", self.on_drag_leave)
+    
+    def on_drop(self, event):
+        """Handle files dropped anywhere on the window."""
+        paths = _parse_drop_paths(event.data)
+        if not paths:
+            return
+        
+        # First PDF -> PDF path, everything else -> template (first image found)
+        for p in paths:
+            ext = Path(p).suffix.lower()
+            if ext == ".pdf" and not self.pdf_path.get():
+                self.pdf_path.set(p)
+                self.status_label.config(text=f"PDF loaded: {Path(p).name}")
+                break
+        else:
+            # No PDF found, but maybe an image for template
+            for p in paths:
+                ext = Path(p).suffix.lower()
+                if ext in (".png", ".jpg", ".jpeg"):
+                    self.template_path.set(p)
+                    self.status_label.config(text=f"Template loaded: {Path(p).name}")
+                    break
+    
+    def on_entry_drop(self, event):
+        """Handle files dropped on a specific entry widget."""
+        paths = _parse_drop_paths(event.data)
+        if not paths:
+            return
+        
+        # Find which entry widget received the drop
+        widget = event.widget
+        
+        # Match the widget to our textvariable
+        # We can check which entry has focus, but simpler: use the widget itself
+        # The entries were created with textvariable=self.pdf_path or self.template_path
+        # We need to figure out which one this is
+        
+        # Use a dictionary to map widget -> variable
+        if not hasattr(self, '_entry_var_map'):
+            self._entry_var_map = {}
+        
+        var = self._entry_var_map.get(widget)
+        
+        # First time setup
+        if var is None:
+            # Find the variable for this widget
+            main_frame = self.root.winfo_children()[0]
+            entries = [c for c in main_frame.winfo_children() if isinstance(c, ttk.Entry)]
+            if len(entries) >= 2:
+                self._entry_var_map = {entries[0]: self.pdf_path, entries[1]: self.template_path}
+                var = self._entry_var_map.get(widget)
+        
+        if var is None:
+            return
+        
+        # Validate file type
+        for p in paths:
+            ext = Path(p).suffix.lower()
+            if var == self.pdf_path:
+                if ext == ".pdf":
+                    var.set(p)
+                    self.status_label.config(text=f"PDF loaded: {Path(p).name}")
+                    break
+                else:
+                    self.status_label.config(text="Please drop a PDF file here")
+            else:  # template
+                if ext in (".png", ".jpg", ".jpeg"):
+                    var.set(p)
+                    self.status_label.config(text=f"Template loaded: {Path(p).name}")
+                    break
+                else:
+                    self.status_label.config(text="Please drop an image file here")
+    
+    def on_drag_enter(self, event):
+        """Visual feedback when dragging over an entry."""
+        event.widget.configure(style="DropHover.TEntry")
+    
+    def on_drag_leave(self, event):
+        """Remove visual feedback when drag leaves."""
+        event.widget.configure(style="TEntry")
     
     def draw_logo(self):
         """Draw a stylized stamp-seal logo with glow effect."""
@@ -199,7 +327,7 @@ class PDFSplitterGUI:
             c.create_arc(x+btn_w-r-i, y+btn_h-r-i, x+btn_w+i, y+btn_h+i, start=270, extent=90, style="arc",
                          outline=self.accent, width=1, stipple="gray75")
         
-        # Button rounded rect (using rounded-rect trick)
+        # Button rounded rect
         c.create_polygon(
             x+r, y, x+btn_w-r, y, x+btn_w, y, x+btn_w, y+r,
             x+btn_w, y+btn_h-r, x+btn_w, y+btn_h, x+btn_w-r, y+btn_h,
@@ -281,8 +409,6 @@ class PDFSplitterGUI:
     
     def split_pdf_thread(self, pdf_path, template_path):
         try:
-            import shutil
-            
             template = cv2.imread(template_path)
             if template is None:
                 raise ValueError("Could not load template image")
@@ -472,7 +598,7 @@ class PDFSplitterGUI:
 
 
 def main():
-    root = tk.Tk()
+    root = tkinterdnd2.Tk()
     app = PDFSplitterGUI(root)
     root.mainloop()
 
